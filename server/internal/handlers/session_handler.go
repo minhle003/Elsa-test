@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"github.com/gin-gonic/gin"
-	socketio "github.com/googollee/go-socket.io"
 	"github.com/minhle003/Elsa-test/internal/services/session_service"
+	"github.com/minhle003/Elsa-test/internal/socket"
 	"github.com/minhle003/Elsa-test/pkg/logging"
 	"net/http"
 
@@ -58,7 +58,7 @@ func GetSession(client *firestore.Client, logger logging.Logger) gin.HandlerFunc
 	}
 }
 
-func JoinSession(client *firestore.Client, server *socketio.Server, logger logging.Logger) gin.HandlerFunc {
+func JoinSession(client *firestore.Client, hub *socket.WebSocketHub, logger logging.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var request struct {
 			SessionId string `json:"sessionId" binding:"required"`
@@ -76,12 +76,12 @@ func JoinSession(client *firestore.Client, server *socketio.Server, logger loggi
 			return
 		}
 
-		server.BroadcastToRoom("/", request.SessionId, "update", session)
+		hub.Broadcast <- session
 		c.JSON(http.StatusOK, gin.H{"session": session, "participantId": participantId})
 	}
 }
 
-func StartSession(client *firestore.Client, server *socketio.Server, logger logging.Logger) gin.HandlerFunc {
+func StartSession(client *firestore.Client, hub *socket.WebSocketHub, logger logging.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetHeader("User-ID")
 		if userID == "" {
@@ -102,12 +102,12 @@ func StartSession(client *firestore.Client, server *socketio.Server, logger logg
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		server.BroadcastToRoom("/", request.SessionId, "update", session)
+		hub.Broadcast <- session
 		c.JSON(http.StatusOK, session)
 	}
 }
 
-func ChangeQuestion(client *firestore.Client, server *socketio.Server, logger logging.Logger) gin.HandlerFunc {
+func ChangeQuestion(client *firestore.Client, hub *socket.WebSocketHub, logger logging.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetHeader("User-ID")
 		if userID == "" {
@@ -130,17 +130,17 @@ func ChangeQuestion(client *firestore.Client, server *socketio.Server, logger lo
 			return
 		}
 
-		server.BroadcastToRoom("/", request.SessionId, "update", session)
+		hub.Broadcast <- session
 		c.JSON(http.StatusOK, session)
 	}
 }
 
-func UpdateScore(client *firestore.Client, server *socketio.Server, logger logging.Logger) gin.HandlerFunc {
+func UpdateScore(client *firestore.Client, hub *socket.WebSocketHub, logger logging.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var request struct {
 			SessionId     string `json:"sessionId" binding:"required"`
 			ParticipantId string `json:"participantId" binding:"required"`
-			Score         int    `json:"questionIndex" binding:"required"`
+			Score         int    `json:"score" binding:"required"`
 		}
 		if err := c.ShouldBindJSON(&request); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -153,12 +153,12 @@ func UpdateScore(client *firestore.Client, server *socketio.Server, logger loggi
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		server.BroadcastToRoom("/", request.SessionId, "update", session)
+		hub.Broadcast <- session
 		c.JSON(http.StatusOK, session)
 	}
 }
 
-func EndSession(client *firestore.Client, server *socketio.Server, logger logging.Logger) gin.HandlerFunc {
+func EndSession(client *firestore.Client, hub *socket.WebSocketHub, logger logging.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetHeader("User-ID")
 		if userID == "" {
@@ -179,7 +179,7 @@ func EndSession(client *firestore.Client, server *socketio.Server, logger loggin
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		server.BroadcastToRoom("/", request.SessionId, "update", session)
+		hub.Broadcast <- session
 		c.JSON(http.StatusOK, session)
 	}
 }

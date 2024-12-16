@@ -1,145 +1,210 @@
 import React, { useEffect, useState } from 'react';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
-import { changeQuestion, updateScore } from '../api';
-import db from '../firebase';
+import { startSession, updateScore, changeQuestion } from '../api';
+import { WebSockethost } from '../socket';
 
 
-const Session = ({ sessionId, userId }) => {
-  const [session, setSession] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [answer, setAnswer] = useState('');
-  const [timer, setTimer] = useState(0);
-  const [error, setError] = useState('');
+const SessionComponent = ({ sessionId, userId }) => {
+    const [session, setSessionData] = useState(null);
+    const [error, setError] = useState(null);
+    const [socket, setSocket] = useState(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [answer, setAnswer] = useState('');
+    const [timeLeft, setTimeLeft] = useState(null); 
+    const [isTimerRunning, setIsTimerRunning] = useState(false);
+    const [isSubmit, setIsSubmit] = useState(false)
+    const [score, setScore] = useState(0)
 
-  useEffect(() => {
-    if (!sessionId || !userId) {
-      setError('Session ID or User ID is missing');
-      return;
-    }
-
-    try {
-        const sessionRef = doc(db, 'sessions', sessionId);
-
-        const unsubscribe = onSnapshot(sessionRef, (doc) => {
-          if (doc.exists()) {
-            const sessionData = doc.data();
-            console.log(sessionData)
-            setSession(sessionData);
-            if (sessionData.Status === 'started') {
-              setCurrentPage(2);
-              setTimer(30); // Set timer for 30 seconds
-            }
-          } else {
-            setError('Session not found');
-          }
-        });
-        return () => {
-            unsubscribe();
+    useEffect(() => {
+        const ws = new WebSocket(WebSockethost);
+        ws.onopen = () => {
+            console.log('Connected to WebSocket server');
+            const message = { sessionId: sessionId, userId: userId };
+            ws.send(JSON.stringify(message));
         };
-    } catch (error) {
-        setError(error)
-    }
-  }, [sessionId, userId]);
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            console.log(data, Object.entries(data.Participants))
+            setSessionData(prevSession => {
+                if (data?.Quiz?.Questions) {
+                    if (data?.CurrentQuestionIndex !== prevSession?.CurrentQuestionIndex) {
+                        setIsTimerRunning(true);
+                        setTimeLeft(data?.Quiz?.Questions[data?.CurrentQuestionIndex].Time);
+                    }
+                }
+                if (data.Status === 'started') {
+                    setCurrentPage(2);
+                }
+                if (error) { 
+                    setError(null); 
+                }
+                return data;
+            });
+            if (error) {
+                setError(null)
+            }
+        };
+        ws.onclose = (event) => {
+            console.log('Disconnected from WebSocket server:', event);
+        };
 
-  useEffect(() => {
-    if (timer > 0) {
-      const interval = setInterval(() => {
-        setTimer(timer - 1);
-      }, 1000);
-      return () => clearInterval(interval);
-    } else if (timer === 0 && currentPage === 2) {
-      // Time's up, show answer and switch to page 3
-      setCurrentPage(3);
-      setTimeout(() => {
-        if (session.CurrentQuestionIndex < session.Quiz.Questions.length - 1) {
-          changeQuestion(sessionId, session.CurrentQuestionIndex + 1);
-          setCurrentPage(2);
-          setTimer(30); // Reset timer for next question
+        ws.onerror = (err) => {
+            if (err != error) {
+                setError(err)
+            }
+            console.error('WebSocket error:', err);
+        };
+
+        setSocket(ws);  // Store the socket instance
+
+        return () => { // Cleanup on unmount
+            if (socket) {
+                socket.close();
+            }
+        };
+
+    }, [sessionId, userId]);
+
+    const handleStartSession = async () => {
+        try {
+            await startSession(sessionId);
+        } catch (error) {
+            setError('Failed to start session');
         }
-      }, 5000);
+    };
+
+    const handleChangeQuestion = async (nextQuestionIndex) => {
+        console.log("vdsdsvsd")
+        await changeQuestion(sessionId, nextQuestionIndex)
     }
-  }, [timer, currentPage, session, sessionId]);
 
-  const handleAnswerSubmit = async () => {
-    if (answer) {
-      const correct = session.Quiz.Questions[session.CurrentQuestionIndex].Choices.includes(answer);
-      if (correct) {
-        await updateScore(sessionId, session.Participants[userId].Score + 1);
-      }
-      setAnswer('');
+    // Timer useEffect
+    useEffect(() => {
+        console.log(isTimerRunning, timeLeft)
+        let timerInterval;
+
+        if (isTimerRunning && timeLeft > 0) {
+            timerInterval = setInterval(() => {
+                setTimeLeft((prevTime) => prevTime - 1);
+            }, 1000); // Update every 1000ms (1 second)
+        } else if (timeLeft === 0) {
+            clearInterval(timerInterval)
+            if (currentPage == 2){
+                console.log(userId == session.CreatedBy, "caccacsscs")
+                if (userId == session.CreatedBy && session?.CurrentQuestionIndex < session.Quiz?.Questions.length - 1) {
+                    handleChangeQuestion(session?.CurrentQuestionIndex + 1)
+                }
+                setCurrentPage(3)
+                setTimeLeft(5)
+                setIsSubmit(false)
+            } else if (currentPage == 3) {
+                if (session?.Quiz?.Questions.length - 1 != session?.CurrentQuestionIndex) {
+                    setCurrentPage(2)
+                    setTimeLeft(session?.Quiz?.Questions[session?.CurrentQuestionIndex].Time)
+                } else {
+                    setIsTimerRunning(false)
+                }
+            }
+        }
+
+
+        return () => {
+            clearInterval(timerInterval);
+        };
+    }, [timeLeft, isTimerRunning]);
+
+    const handleAnswerSubmit = async () => {
+        setIsSubmit(true)
+        if (answer) {
+            const correct = session.Quiz.Questions[session.CurrentQuestionIndex].Answer == answer;
+            if (correct) {
+                let newScore = calculateScore() + session.Participants[userId].Score
+                try {
+                    await updateScore(sessionId, userId, newScore);
+                } catch (error) {
+                    alert("Failed to submit answer", error)
+
+                }
+            }
+            setAnswer('');
+        }
+    };
+
+    const calculateScore = () => {
+        const remainTime = timeLeft / session.Quiz?.Questions[session?.CurrentQuestionIndex].Time
+        const scoreEarn = Math.floor(session.Quiz.Questions[session.CurrentQuestionIndex].Score * remainTime)
+        setScore(scoreEarn)
+        return scoreEarn
     }
-  };
 
-  const handleStartSession = async () => {
-    const sessionRef = doc(db, 'sessions', sessionId);
-    try {
-      await updateDoc(sessionRef, { Status: 'started' });
-    } catch (error) {
-      setError('Failed to start session');
-    }
-  };
-
-  if (error) {
-    return <div className="alert alert-danger">{error}</div>;
-  }
-
-  if (!session) {
-    return <div>Loading...</div>;
-  }
-
-  return (
-    <div className="container">
-
-      {currentPage === 1 && (
-        <div>
-          <h3>Participants</h3>
-          {userId == session.CreatedBy && (
-            <button className="btn btn-primary" onClick={handleStartSession}>Start Session</button>
-          )}
-          <ul>
-            {Object.keys(session.Participants).map((participant) => (
-              <li key={participant}>{participant}</li>
-            ))}
-          </ul>
+    return (
+        <div className="container">
+            {currentPage === 1 && (
+                <div>
+                    <h3>Participants</h3>
+                    {userId == session?.CreatedBy && (
+                        <button className="btn btn-primary" onClick={handleStartSession}>Start Session</button>
+                    )}
+                    {session?.Participants && (
+                        <ul>
+                            {Object.keys(session?.Participants)?.map((participant) => (
+                                <li key={participant}>{session?.Participants[participant].Name}</li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            )}
+            {currentPage === 2 && (
+                <div>
+                    <h1>Quesion {session?.CurrentQuestionIndex + 1}</h1>
+                    <h3>{session?.Quiz.Questions[session?.CurrentQuestionIndex].Title}</h3>
+                    {session?.Quiz.Questions[session?.CurrentQuestionIndex].Type === "multiple_choice" ? (
+                        <ul>
+                            {session?.Quiz?.Questions[session?.CurrentQuestionIndex]?.Choices?.map((choice, index) => (
+                                <li key={index} onClick={() => setAnswer(choice.Description)} style={{ backgroundColor: answer === choice.Description ? 'lightblue' : 'white' }}>
+                                    {choice.Description}
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <input
+                            type="text"
+                            value={answer}
+                            onChange={(e) => setAnswer(e.target.value)}
+                            placeholder="Type your answer"
+                        />
+                    )}
+                    {userId != session?.CreatedBy && !isSubmit && (
+                        <button onClick={handleAnswerSubmit}>Submit Answer</button>
+                    )}
+                    {isSubmit && (
+                        <div>
+                            {score == 0 ? (
+                                <p style={{color: "red"}}>Incorrect, the answer is {session.Quiz.Questions[session.CurrentQuestionIndex].Answer}</p>
+                            ) : (
+                                <p style={{color: "green"}}>Correct, you earn {score} points </p>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+            {currentPage === 3 && (
+                <div>
+                    <h3>LeaderBoards</h3>
+                    <h4></h4>
+                    <ul>
+                        {Object.entries(session?.Participants).sort((a, b) => b[1].Score - a[1].Score).map((participant, index) => (
+                            <li key={participant[0]}>
+                               {index+1}. {participant[1].Name}: {participant[1].Score}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            {(currentPage == 2 || currentPage == 3) && isTimerRunning && timeLeft !== null && (
+                <div>Time Left: {timeLeft}s</div>
+            )}
         </div>
-      )}
-      {currentPage === 2 && (
-        <div>
-          <h3>{session.Quiz.Questions[session.CurrentQuestionIndex].Title}</h3>
-          {session.Quiz.Questions[session.CurrentQuestionIndex].Type === 'multiple_choice' ? (
-            <ul>
-              {session.Quiz.Questions[session.CurrentQuestionIndex].Choices.map((choice) => (
-                <li key={choice} onClick={() => setAnswer(choice)}>
-                  {choice}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <input
-              type="text"
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              placeholder="Type your answer"
-            />
-          )}
-          <button onClick={handleAnswerSubmit}>Submit Answer</button>
-          <div className="timer">Time left: {timer} seconds</div>
-        </div>
-      )}
-      {currentPage === 3 && (
-        <div>
-          <h3>Scores</h3>
-          <ul>
-            {Object.keys(session.Participants).map((participant) => (
-              <li key={participant}>
-                {participant}: {session.Participants[participant].score}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
+    );
 };
 
-export default Session;
+export default SessionComponent;

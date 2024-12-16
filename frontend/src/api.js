@@ -21,9 +21,9 @@ export const startSession = (sessionId) => api.patch('/session/start', { session
 export const createSession = (quizId) => api.post('/session', { quizId });
 export const getSession = (sessionId) => api.get(`/session/${sessionId}`)
 export const joinSession = (sessionId, name) => api.patch('/session/join', { sessionId, name });
-export const changeQuestion = (sessionId, currentQuestionIndex) =>
-  api.patch('/session/change_question', { sessionId, currentQuestionIndex });
-export const updateScore = (sessionId, score) =>
-  api.patch('/session/participant/update_score', { sessionId, score });
+export const changeQuestion = (sessionId, questionIndex) =>
+  api.patch('/session/change_question', { sessionId, questionIndex });
+export const updateScore = (sessionId, participantId, score) =>
+  api.patch('/session/participant/update_score', { sessionId: sessionId, participantId: participantId, score: score });
 
 export default api;

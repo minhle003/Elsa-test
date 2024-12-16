@@ -15,8 +15,8 @@ type SessionService interface {
 type Session struct {
 	ID                   string                 `json:"ID,omitempty"`
 	CreatedBy            string                 `json:"CreatedBy,omitempty"`
-	Quiz                 quiz_service.Quiz      `json:"QuizId,omitempty"`
-	CurrentQuestionIndex int                    `json:"CurrentQuestionIndex,omitempty"`
+	Quiz                 quiz_service.Quiz      `json:"Quiz,omitempty"`
+	CurrentQuestionIndex int                    `json:"CurrentQuestionIndex"`
 	CreatedTime          int64                  `json:"CreatedTime,omitempty"`
 	StartTime            *int64                 `json:"StartTime,omitempty"`
 	EndTime              *int64                 `json:"EndTime,omitempty"`

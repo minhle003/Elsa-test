@@ -1,5 +1,5 @@
 import React from 'react';
-import Session from '../components/Session';
+import SessionComponent from '../components/Session';
 import { useLocation } from 'react-router-dom';
 
 const useQuery = () => {
@@ -13,7 +13,7 @@ const SessionPage = () => {
 
   return (
     <div>
-      <Session sessionId={sessionId} userId={userId} />
+      <SessionComponent sessionId={sessionId} userId={userId} />
     </div>
   );
 };

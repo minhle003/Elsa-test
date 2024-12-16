@@ -129,3 +129,5 @@ public/
 # temporary folders
 .tmp/
 temp/
+
+dbKey.json
