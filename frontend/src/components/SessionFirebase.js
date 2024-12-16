@@ -1,3 +1,4 @@
+// demo for Firebase real time data update
 import React, { useEffect, useState } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { changeQuestion, updateScore } from '../api';

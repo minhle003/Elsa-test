@@ -62,7 +62,7 @@ func (s *sessionServiceImpl) CreateSession(quizId string, userId string) (Sessio
 	session := Session{
 		CreatedBy:            userId,
 		Quiz:                 quiz,
-		CurrentQuestionIndex: 0,
+		CurrentQuestionIndex: -1,
 		CreatedTime:          time.Now().Unix(),
 		Status:               statusCreated,
 		Participants:         map[string]Participant{},
@@ -155,6 +155,7 @@ func (s *sessionServiceImpl) StartSession(sessionId string, userId string) (Sess
 	}
 
 	session.Status = statusStarted
+	session.CurrentQuestionIndex = 0
 
 	_, err = sessionDocRef.Set(s.ctx, session)
 

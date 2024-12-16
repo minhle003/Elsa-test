@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { startSession, updateScore, changeQuestion } from '../api';
 import { WebSockethost } from '../socket';
 
@@ -13,6 +13,16 @@ const SessionComponent = ({ sessionId, userId }) => {
     const [isTimerRunning, setIsTimerRunning] = useState(false);
     const [isSubmit, setIsSubmit] = useState(false)
     const [score, setScore] = useState(0)
+    const [questionIndex, setQuestionIndex] = useState(-1)
+
+    const questionIndexRef = useRef(-2)
+    const currentPageRef = useRef(1)
+
+    useEffect(() => {
+        questionIndexRef.current = questionIndex
+        currentPageRef.current = currentPage
+    }, [questionIndex, currentPage])
+
 
     useEffect(() => {
         const ws = new WebSocket(WebSockethost);
@@ -23,22 +33,18 @@ const SessionComponent = ({ sessionId, userId }) => {
         };
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            console.log(data, Object.entries(data.Participants))
-            setSessionData(prevSession => {
-                if (data?.Quiz?.Questions) {
-                    if (data?.CurrentQuestionIndex !== prevSession?.CurrentQuestionIndex) {
-                        setIsTimerRunning(true);
-                        setTimeLeft(data?.Quiz?.Questions[data?.CurrentQuestionIndex].Time);
-                    }
+            console.log(currentPageRef.current, data, questionIndexRef)
+            if (data?.Quiz?.Questions) {
+                if (data?.CurrentQuestionIndex != questionIndexRef.current) {
+                    setIsTimerRunning(true);
+                    setTimeLeft(data?.Quiz?.Questions[data?.CurrentQuestionIndex].Time)
                 }
-                if (data.Status === 'started') {
-                    setCurrentPage(2);
-                }
-                if (error) { 
-                    setError(null); 
-                }
-                return data;
-            });
+            }
+            setSessionData(data);
+            setQuestionIndex(data.CurrentQuestionIndex)
+            if (data.Status === 'started' && currentPageRef.current == 1) {
+                setCurrentPage(2);
+            }
             if (error) {
                 setError(null)
             }
@@ -54,9 +60,9 @@ const SessionComponent = ({ sessionId, userId }) => {
             console.error('WebSocket error:', err);
         };
 
-        setSocket(ws);  // Store the socket instance
+        setSocket(ws);
 
-        return () => { // Cleanup on unmount
+        return () => {
             if (socket) {
                 socket.close();
             }
@@ -73,28 +79,25 @@ const SessionComponent = ({ sessionId, userId }) => {
     };
 
     const handleChangeQuestion = async (nextQuestionIndex) => {
-        console.log("vdsdsvsd")
         await changeQuestion(sessionId, nextQuestionIndex)
     }
 
-    // Timer useEffect
     useEffect(() => {
-        console.log(isTimerRunning, timeLeft)
         let timerInterval;
 
         if (isTimerRunning && timeLeft > 0) {
             timerInterval = setInterval(() => {
                 setTimeLeft((prevTime) => prevTime - 1);
-            }, 1000); // Update every 1000ms (1 second)
+            }, 1000);
         } else if (timeLeft === 0) {
             clearInterval(timerInterval)
             if (currentPage == 2){
-                console.log(userId == session.CreatedBy, "caccacsscs")
                 if (userId == session.CreatedBy && session?.CurrentQuestionIndex < session.Quiz?.Questions.length - 1) {
-                    handleChangeQuestion(session?.CurrentQuestionIndex + 1)
+                    handleChangeQuestion(questionIndex + 1)
                 }
                 setCurrentPage(3)
                 setTimeLeft(5)
+                setScore(0)
                 setIsSubmit(false)
             } else if (currentPage == 3) {
                 if (session?.Quiz?.Questions.length - 1 != session?.CurrentQuestionIndex) {
@@ -125,8 +128,8 @@ const SessionComponent = ({ sessionId, userId }) => {
 
                 }
             }
-            setAnswer('');
         }
+        setAnswer('');
     };
 
     const calculateScore = () => {
@@ -157,6 +160,7 @@ const SessionComponent = ({ sessionId, userId }) => {
                 <div>
                     <h1>Quesion {session?.CurrentQuestionIndex + 1}</h1>
                     <h3>{session?.Quiz.Questions[session?.CurrentQuestionIndex].Title}</h3>
+                    <h4>{session?.Quiz.Questions[session?.CurrentQuestionIndex].Description}</h4>
                     {session?.Quiz.Questions[session?.CurrentQuestionIndex].Type === "multiple_choice" ? (
                         <ul>
                             {session?.Quiz?.Questions[session?.CurrentQuestionIndex]?.Choices?.map((choice, index) => (
